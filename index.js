@@ -1,130 +1,130 @@
-const express = require('express');
-const app = express();
-const rateLimiter = require('express-rate-limit');
-const compression = require('compression');
-const cors = require('cors');
-const path = require('path');
-const bodyParser = require('body-parser');
-const fs = require('fs');
+import express from "express";
+import rateLimit from "express-rate-limit";
+import compression from "compression";
+import cors from "cors";
+import path from "path";
+import bodyParser from "body-parser";
+import fs from "fs";
+import { fileURLToPath } from "url";
 
+const app = express();
+
+/* __dirname fix (ESM için) */
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+/* MIDDLEWARE */
 app.use(
   compression({
     level: 5,
     threshold: 0,
     filter: (req, res) => {
-      if (req.headers['x-no-compression']) {
-        return false;
-      }
+      if (req.headers["x-no-compression"]) return false;
       return compression.filter(req, res);
     },
-  }),
+  })
 );
+
 app.use(bodyParser.urlencoded({ extended: true }));
-app.set('trust proxy', 0);
-app.use(function (req, res, next) {
-  console.log(
-    `[${new Date().toLocaleString()}] ${req.method} ${req.url} - ${
-      res.statusCode
-    }`,
-  );
+app.use(express.json());
+app.use(cors());
+
+app.set("trust proxy", 1);
+
+app.use(
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+  })
+);
+
+/* LOGGER */
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
-app.use(cors());
-app.use(express.json());
-app.use(rateLimiter({ windowMs: 15 * 60 * 1000, max: 100, headers: true }));
 
-app.all('/player/login/dashboard', function (req, res) {
+/* ROUTES */
+
+app.all("/player/login/dashboard", (req, res) => {
   const tData = {};
+
   try {
-    const uData = JSON.stringify(req.body).split('"')[1].split('\\n');
-    const uName = uData[0].split('|');
-    const uPass = uData[1].split('|');
-    for (let i = 0; i < uData.length - 1; i++) {
-      const d = uData[i].split('|');
-      tData[d[0]] = d[1];
+    const uData = JSON.stringify(req.body).split('"')[1].split("\\n");
+
+    for (const line of uData) {
+      const d = line.split("|");
+      if (d[0] && d[1]) tData[d[0]] = d[1];
     }
-    if (uName[1] && uPass[1]) {
-      res.redirect('/player/growid/login/validate');
-    }
-  } catch (error) {
-    console.log(`Error: ${why}`);
+  } catch (err) {
+    console.error(err);
   }
 
-  const html = fs.readFileSync(
-    path.join(process.cwd(), 'public/dashboard.html'),
-    'utf8',
+  const htmlPath = path.join(__dirname, "public", "dashboard.html");
+  const html = fs.readFileSync(htmlPath, "utf8");
+
+  res.send(
+    html.replace("{{ data._token }}", JSON.stringify(tData))
   );
-  const modifiedHtml = html.replace(
-    '{{ data._token }}',
-    `${JSON.stringify(tData)}`,
-  );
-  res.send(modifiedHtml);
 });
 
-app.all('/player/growid/login/validate', (req, res) => {
+app.all("/player/growid/login/validate", (req, res) => {
   try {
-    const _token = req.body._token;
-    const growId = req.body.growId;
-    const password = req.body.password;
+    const { _token, growId, password } = req.body;
 
     const token = Buffer.from(
-      `_token=${_token}&growId=${growId}&password=${password}`,
-    ).toString('base64');
+      `_token=${_token}&growId=${growId}&password=${password}`
+    ).toString("base64");
 
-    res.send(
-      `{"status":"success", "message":"Account Validated.", "token":"${token}", "url":"", "accountType":"growtopia"}`,
-    );
-  } catch (error) {
-    console.log(error);
-
-    res.send(
-      `{"status":"error", "message":"Account not valid.", "token":"", "accountType":"growtopia"}`,
-    );
+    res.json({
+      status: "success",
+      message: "Account Validated.",
+      token,
+      url: "",
+      accountType: "growtopia",
+    });
+  } catch {
+    res.status(400).json({
+      status: "error",
+      message: "Account not valid.",
+      token: "",
+      accountType: "growtopia",
+    });
   }
 });
 
-app.post('/player/growid/checkToken', (req, res) => {
+app.post("/player/growid/checkToken", (req, res) => {
   try {
     const { refreshToken, clientData } = req.body;
+    if (!refreshToken || !clientData)
+      return res.status(400).json({ status: "error" });
 
-    if (!refreshToken || !clientData) {
-      return res.status(400).send({
-        status: 'error',
-        message: 'Missing refreshToken or clientData',
-      });
-    }
-
-    let decodeRefreshToken = Buffer.from(refreshToken, 'base64').toString(
-      'utf-8',
-    );
+    const decoded = Buffer.from(refreshToken, "base64").toString("utf8");
 
     const token = Buffer.from(
-      decodeRefreshToken.replace(
+      decoded.replace(
         /(_token=)[^&]*/,
-        `$1${Buffer.from(clientData).toString('base64')}`,
-      ),
-    ).toString('base64');
+        `$1${Buffer.from(clientData).toString("base64")}`
+      )
+    ).toString("base64");
 
-    res.send({
-      status: 'success',
-      message: 'Token is valid.',
-      token: token,
-      url: '',
-      accountType: 'growtopia',
+    res.json({
+      status: "success",
+      message: "Token is valid.",
+      token,
+      url: "",
+      accountType: "growtopia",
     });
-  } catch (error) {
-    res.status(500).send({ status: 'error', message: 'Internal Server Error' });
+  } catch {
+    res.status(500).json({ status: "error" });
   }
 });
 
-app.get('/favicon.:ext', function (req, res) {
-  res.sendFile(path.join(__dirname, 'public', 'favicon.ico'));
+app.get("/", (req, res) => {
+  res.send("Connected!");
 });
 
-app.get('/', function (req, res) {
-  res.send('Connected!');
-});
-
-app.listen(3000, function () {
-  console.log('Listening on port 3000');
-});
+/* 🚨 SERVERLESS EXPORT (listen YOK) */
+export default app;
