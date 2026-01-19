@@ -1,19 +1,14 @@
 {
   "name": "gurotopia-login",
-  "module": "index.js",
   "type": "module",
   "private": true,
-  "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
+  "scripts": {
+    "dev": "vercel dev"
   },
   "dependencies": {
-    "body-parser": "^2.2.0",
-    "compression": "^1.8.1",
+    "express": "^4.19.2",
+    "compression": "^1.7.4",
     "cors": "^2.8.5",
-    "express": "^5.1.0",
-    "express-rate-limit": "^8.1.0"
+    "express-rate-limit": "^7.3.0"
   }
 }
